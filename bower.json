@@ -1,0 +1,9 @@
+{
+  "name": "angular-burn",
+  "version": "0.0.0",
+  "devDependencies": {
+    "angular": "1.2",
+    "angular-mocks": "1.2",
+    "angular-fire": "~0.3.1"
+  }
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html ng-app="burnbase">
+<head>
+<script src="bower_components/angular/angular.js"></script>
+<script src="https://cdn.firebase.com/v0/firebase-debug.js"></script>
+<script src="burn2.js"></script>
+</head>
+<body ng-controller="MyCtrl">
+<pre>{{stuff | json}}</pre>
+<ul>
+  <li ng-repeat="(k,v) in stuff">
+  {{k}}: <textarea ng-model="stuff[k]"></textarea>
+  </li>
+</ul>
+</body>
+<script>
+function MyCtrl($scope, Burn, $parse) {
+  $scope.stuff = {
+    apples: 'are bad',
+    others: 'are good',
+    values: [1,2,3,4]
+  };
+  Burn($scope, 'stuff', 'https://ajoslin-test.firebaseio.com/stuff');
+}
+</script>
+</body>
+</html>
