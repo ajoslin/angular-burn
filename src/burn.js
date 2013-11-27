@@ -1,20 +1,23 @@
 
-var burnModule = angular.module('burnbase', []),
-  isString = angular.isString,
-  equals = angular.equals,
-  noop = angular.noop,
-  copy = angular.copy,
-  isDefined = angular.isDefined,
-  isArray = angular.isArray,
-  extend = angular.extend,
-  isObject = angular.isObject;
+var burnModule = angular.module('burnbase', []);
+var equals = angular.equals;
+var extend = angular.extend;
+var forEach = angular.forEach;
+var isArray = angular.isArray;
+var isDate = angular.isDate;
+var isDefined = angular.isDefined;
+var isFunction = angular.isFunction;
+var isNumber = angular.isNumber;
+var isObject = angular.isObject;
+var isString = angular.isString;
+var noop = angular.noop;
 
 burnModule.factory('Firebase', ['$window', function($window) {
   return $window.Firebase;
 }]);
 
-burnModule.factory('Burn', ['$parse', '$timeout', '$rootScope', 'Firebase', '$q',
-function($parse, $timeout, $rootScope, Firebase, $q) {
+burnModule.factory('Burn', ['$parse', '$rootScope', 'Firebase', '$q',
+function($parse, $rootScope, Firebase, $q) {
 
   return Burn;
 
@@ -42,7 +45,7 @@ function($parse, $timeout, $rootScope, Firebase, $q) {
     }
 
     ref.once('value', function(snap) {
-      $timeout(function() {
+      $rootScope.$evalAsync(function() {
         init(snap.val());
       });
     });
@@ -63,24 +66,25 @@ function($parse, $timeout, $rootScope, Firebase, $q) {
 
     function init(remoteValue) {
       var merged = burnMerge(remoteValue, context[name]);
-      extend(context[name], merged);
+      if (isObject(merged)) {
+        extend(context[name], merged);
+      } else {
+        context[name] = merged;
+      }
 
-      firebaseRefListen();
+      firebaseBindRef();
+      var watchFn = makeObjectReportWatchFn(context, name, onLocalChange);
 
-      unbindWatch = $rootScope.$watch(function() {
-        return context[name];
-      }, sendToFirebase, true);
+      $rootScope.$watch(watchFn, noop);
 
-      function sendToFirebase(newValue) {
-        //TODO find good way of only sending changes up, to save bandwidth and transfer time
+      function onLocalChange(path, newValue) {
+        var childRef = path.length ? ref.child(path.join('/')) : ref;
 
-        //Remove $-prefixed attrs
-        newValue = burnCopy(newValue);
-        //Update objects instead of just setting (not sure why, angularFire does this so I do)
+        //Update objects instead of just setting (not sure why, angularFire does this so we do too)
         if (isObject(newValue) && !isArray(newValue)) {
-          ref.update(newValue);
+          childRef.update(newValue);
         } else {
-          ref.set(newValue);
+          childRef.set(newValue);
         }
       }
 
@@ -88,56 +92,84 @@ function($parse, $timeout, $rootScope, Firebase, $q) {
       readyDeferred.resolve();
     }
 
-    function firebaseRefListen(path) {
+    function firebaseBindRef(path) {
       path = path || [];
       var watchRef = path.length ? ref.child(path.join('/')) : ref;
       listen('child_added');
       listen('child_removed');
       listen('child_changed');
+      if (!path.length) {
+        //listen to value on the top-level, incase we have a primitive at the top-level 
+        //(eg if our top-value is 1, child_* events will never happen)
+        listen('value');
+      }
       function listen(type) {
         watchRef.on(type, function(snap) {
           var key = snap.name();
           var value = snap.val();
           var childRef = watchRef.child(key);
+          //console.log(type, path, key, value);
           switch(type) {
             case 'child_added':
               //For objects, watch each child
               if (isObject(value)) {
-                firebaseRefListen( path.concat(key) );
+                firebaseBindRef( path.concat(key) );
               }
               invokeChange(type, path, key, value);
               break;
             case 'child_removed':
               invokeChange(type, path, key, value);
               //Unbind all child changes
-              watchRef.child(key).off();
+              firebaseUnbindRef(path, key, value);
               break;
             case 'child_changed':
               //Only call changes at their root
               if (!isObject(value)) {
                 invokeChange(type, path, key, value);
               }
+              break;
+            case 'value': 
+              //Three cases in which we need to reassign the top level:
+              //1) if top level is a primitive (eg changing 1 to 2 or string to string)
+              //2) if top level was a primitive and we are changing to object, reassign
+              //3) if top level was an object and we are changing to primitive, reassign
+              if (!isObject(value) || !isObject(context[name])) {
+                $rootScope.$evalAsync(function() {
+                  context[name] = value;
+                });
+              }
+              break;
           }
         });
       }
     }
+    function firebaseUnbindRef(path, key, value) {
+      //Unbind this ref, then if the value removed is an object, unbind anything watching
+      //all of the object's child key/value pairs.
+      //Eg if we remove an object { a: 1, b: { c: { d: 'e' } } }, it should call .off()
+      //on the parent, a/b, a/b, and a/b/c
+      if (isObject(value)) {
+        forEach(value, function(childValue, childKey) {
+          firebaseUnbindRef(path.concat(key), childKey, childValue);
+        });
+      }
+      path.length && ref.child(path.join('/')).off();
+    }
     function invokeChange(type, path, key, value) {
       $rootScope.$evalAsync(function() {
-        var pathParsed, changeContext;
+        var changeContext;
         switch(type) {
           case 'child_removed':
             changeContext = parsePath($parse, name, path)(context);
             if (isArray(changeContext)) {
               changeContext.splice(key, 1);
-            //Only delete if exists
             }  else if (changeContext) {
               delete changeContext[key];
             }
             break;
           case 'child_added':
             changeContext = parsePath($parse, name, path)(context);
-            //Only add if not exists
-            if (changeContext && !changeContext[key]) {
+            if (changeContext) {
               changeContext[key] = value;
             }
             break;
@@ -154,10 +186,10 @@ function($parse, $timeout, $rootScope, Firebase, $q) {
 }]);
 
 function parsePath($parse, name, path) {
-  //turn ['key with spaces',  '123bar'] into 'name["key with spaces"]["123bar"]
+  //turn ['key with spaces',  '123bar'] into 'name["key with spaces"]["123bar"]'
   var expr = name;
   for (var i=0, ii=path.length; i<ii; i++) {
-    if (angular.isNumber(path[i])) {
+    if (isNumber(path[i])) {
       expr += '[' + path[i] + ']';
     } else {
       //We're sure to escape keys with quotes in them, 
@@ -195,7 +227,80 @@ function burnMerge(remote, local) {
       merged[key] = remote[key];
     }
     return merged;
-  } else if (remote === null && isDefined(local)) {
+  } else if ((remote === undefined || remote === null) && isDefined(local)) {
     return local;
+  } else {
+    //Eg if remote is a primitive this will fire
+    return remote;
   }
+}
+function makeObjectReportWatchFn(object, name, callback) {
+  var savedObject = {};
+
+  return function() {
+    compare(savedObject, object, name, []);
+  };
+
+  function reportChange(path, newValue) {
+    path.shift(); //first item in path is the `name`, we don't need this
+    callback(path, newValue);
+  }
+
+  function compare(oldObject, newObject, key, path) {
+    var newValue = newObject[key];
+    var oldValue = oldObject[key];
+    var oldLength;
+    var newLength;
+    var childKey;
+
+    if (!isObject(newValue)) {
+      if (newValue !== oldValue) {
+        oldObject[key] = newValue;
+        reportChange(path.concat(key), newValue);
+      }
+    } else if (isArray(newValue)) {
+      if (!isArray(oldValue)) {
+        oldObject[key] = oldValue = [];
+        oldLength = 0;
+      }
+      
+      newLength = newValue.length;
+      
+      if (newLength !== oldLength) {
+        oldValue.length = oldLength = newLength;
+      }
+
+      //copy the items to oldValue and look for changes
+      for (var i=0; i<newLength; i++) {
+        compare(oldValue, newValue, i, path.concat(key));
+      }
+    } else {
+      if (!isObject(oldValue) || isArray(oldValue)) {
+        oldObject[key] = oldValue = {};
+        oldLength = 0;
+      }
+      //Copy newValue to oldValue and look for changes
+      for (childKey in newValue) {
+        if (newValue.hasOwnProperty(childKey) ) {
+          compare(oldValue, newValue, childKey, path.concat(key));
+        }
+      }
+      for (childKey in oldValue) {
+        if (!newValue.hasOwnProperty(childKey)) {
+          delete oldValue[childKey];
+          reportChange(path.concat(key, childKey), null);
+        }
+      }
+    }
+  }
+
+}
+function isScope(obj) {
+  return obj && obj.$watch && obj.$evalAsync;
+}
+function isWindow(obj) {
+  return obj && obj.document && obj.location && obj.alert && obj.setInterval;
+}
+function isRegExp(value) {
+  return toString.apply(value) == '[object RegExp]';
 }
