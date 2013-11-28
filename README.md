@@ -14,7 +14,7 @@ I used angularFire in an app and had some problems with it:
 - angular-burn allows the type of the object at the root to change: you could have an object which goes from array to being removed to an object to a number to a string, and it will work as intended
 - angular-burn has unit tests and is built for testing and modularity
 
-I hope to get this version merged into Firebase core, it is a much better solution.
+I hope to get this version merged into Firebase/angularFire core, it is a much more robust solution.
 
 Development
 -----------
