@@ -1,16 +1,17 @@
 angular-burn
 ------------
 
-Why this instead of angularFire?  It works the same way, automatic synchronization of changes.
+Why this instead of angularFire? 
 
-angularFire needs some refactoring I think to make it unit testable and more stable.
+I used angularFire in production and had some problems with it:
 
-So I refactored, with unit tests, and use recursive listeners for firebase changes.  So now if a deep object changes, only the exact change will be set on the client side.
+1. Every time you change anything on the object, it sent the whole object back up.  The biggest issue with this was security - eg if I have /users/{id} as an angularFire object. I update myUser.photo, and angularFire tries to save - but it tries to save the whole object, and I have a security rule that doesn't allow writing on an existing /users/{id}.  A fix would be to only send pertinent changes up. 
+1. Huge bandwidth usage, due to (1)
+1. angularFire is not unit-tested or anywhere near testable, which just makes me scared to use it in production
 
-Also I want to only send exact changes up to Firebase - this will require taking watchCollection from angular core and modding it a bit to tell us exact changes.
+- angular-burn will figure out exactly which client side changes happen in a deep or nested object/array, and only send those changes up with ref.set().
+- angular-burn will find out exactly which changes happen remotely by adding child listeners, and only change the needed attributes in the client-side object.
+- angular-burn allows the type of the object at the root to change: you could have an object which goes from array to being removed to an object to a number to a string, and it will work as intended
+- angular-burn has unit tests and is built for testing and modularity
 
-**TODO**
-
-* in Burn#destroy(), remove recursively all existing listeners (see if we can figure out way to do this better than just keeping all refs that are listened to in an array)
-* finish unit tests for firebase to angular sync
-* take watchCollection from angular core and make it tell us exact changes, then send those up
+I hope to get this version merged into Firebase core, it is a much better solution.
