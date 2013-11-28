@@ -15,3 +15,11 @@ I used angularFire in production and had some problems with it:
 - angular-burn has unit tests and is built for testing and modularity
 
 I hope to get this version merged into Firebase core, it is a much better solution.
+
+Development
+-----------
+
+- `bower install`
+- `npm install`
+- `karma start` to start test server (requires karma)
+- `grunt` to concat and wrap file in closure
