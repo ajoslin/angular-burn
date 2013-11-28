@@ -3,7 +3,7 @@ angular-burn
 
 Why this instead of angularFire? 
 
-I used angularFire in production and had some problems with it:
+I used angularFire in an app and had some problems with it:
 
 1. Every time you change anything on the object, it sent the whole object back up.  The biggest issue with this was security - eg if I have /users/{id} as an angularFire object. I update myUser.photo, and angularFire tries to save - but it tries to save the whole object, and I have a security rule that doesn't allow writing on an existing /users/{id}.  A fix would be to only send pertinent changes up. 
 1. Huge bandwidth usage, due to 1
