@@ -1,5 +1,6 @@
 
 var burnModule = angular.module('burnbase', []);
+var copy = angular.copy;
 var equals = angular.equals;
 var extend = angular.extend;
 var forEach = angular.forEach;
@@ -73,7 +74,7 @@ function($parse, $rootScope, Firebase, $q) {
       }
 
       firebaseBindRef();
-      var watchFn = makeObjectReportWatchFn(context, name, onLocalChange);
+      var watchFn = makeObjectReporterFn(context, name, onLocalChange);
 
       $rootScope.$watch(watchFn, noop);
 
@@ -108,7 +109,6 @@ function($parse, $rootScope, Firebase, $q) {
           var key = snap.name();
           var value = snap.val();
           var childRef = watchRef.child(key);
-          //console.log(type, path, key, value);
           switch(type) {
             case 'child_added':
               //For objects, watch each child
@@ -234,7 +234,7 @@ function burnMerge(remote, local) {
     return remote;
   }
 }
-function makeObjectReportWatchFn(object, name, callback) {
+function makeObjectReporterFn(object, name, callback) {
   var savedObject = {};
 
   return function() {
@@ -249,8 +249,6 @@ function makeObjectReportWatchFn(object, name, callback) {
   function compare(oldObject, newObject, key, path) {
     var newValue = newObject[key];
     var oldValue = oldObject[key];
-    var oldLength;
-    var newLength;
     var childKey;
 
     if (!isObject(newValue)) {
@@ -260,24 +258,29 @@ function makeObjectReportWatchFn(object, name, callback) {
       }
     } else if (isArray(newValue)) {
       if (!isArray(oldValue)) {
-        oldObject[key] = oldValue = [];
-        oldLength = 0;
-      }
-      
-      newLength = newValue.length;
-      
-      if (newLength !== oldLength) {
-        oldValue.length = oldLength = newLength;
+        //if new value is array and old wasn't, just copy the whole array and update 
+        reportChange(path.concat(key), newValue);
+        oldObject[key] = oldValue = newValue.slice();
+        return; 
       }
 
+      //If old array is bigger, report deletion
+      if (oldValue.length > newValue.length) {
+        for (i=newValue.length,ii=oldValue.length; i<ii; i++) {
+          reportChange(path.concat(key, i), null);
+        }
+      }
+      oldValue.length = newValue.length;
       //copy the items to oldValue and look for changes
-      for (var i=0; i<newLength; i++) {
+      for (var i=0, ii=newValue.length; i<ii; i++) {
         compare(oldValue, newValue, i, path.concat(key));
       }
     } else {
       if (!isObject(oldValue) || isArray(oldValue)) {
-        oldObject[key] = oldValue = {};
-        oldLength = 0;
+        //if new value is object and old wasn't, just copy the whole object and update 
+        reportChange(path.concat(key), newValue);
+        oldObject[key] = copy(newValue);
+        return;
       }
       //Copy newValue to oldValue and look for changes
       for (childKey in newValue) {
@@ -293,14 +296,4 @@ function makeObjectReportWatchFn(object, name, callback) {
       }
     }
   }
-
-}
-function isScope(obj) {
-  return obj && obj.$watch && obj.$evalAsync;
-}
-function isWindow(obj) {
-  return obj && obj.document && obj.location && obj.alert && obj.setInterval;
-}
-function isRegExp(value) {
-  return toString.apply(value) == '[object RegExp]';
 }

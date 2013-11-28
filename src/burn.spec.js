@@ -166,7 +166,75 @@ describe('Burn', function() {
     });
   });
 
-  describe('makeObjectReporter', function() {
+  describe('makeObjectReporterFn', function() {
+    var watch;
+    var context;
+    var results;
+    function setup(initialValue) {
+      context = { data: initialValue };
+      results = [];
+      var watchFn = makeObjectReporterFn(context, 'data', function(path, value) {
+        results.unshift({
+          path: path,
+          value: value
+        });
+      });
+      watch = function() {
+        results.length = 0; //new results for each test
+        watchFn();
+      };
+    }
+
+    it('should report all types of change at root', function() {
+      setup(1);
+      watch();
+      expect(results[0]).toEqual({ path:[], value:1 });
+      context.data = 'string';
+      watch();
+      expect(results[0]).toEqual({ path:[], value:'string' });
+      context.data = [1, 2, 3];
+      watch();
+      expect(results[0]).toEqual({ path:[], value:[1,2,3] });
+      context.data = {a:'b', c:'d'};
+      watch();
+      expect(results[0]).toEqual({ path:[], value:{ a:'b', c:'d' } });
+    });
+
+    it('should report deep changes in object', function() {
+      setup({ deep:{ object:{ is:{ deep:true } } } });
+      watch();
+      context.data.deep.object.extra = 6;
+      watch();
+      expect(results[0]).toEqual({ path:['deep','object','extra'], value:6 });
+      context.data.deep.object.is = null;
+      watch();
+      expect(results[0]).toEqual({ path:['deep','object','is'], value:null });
+      context.data.another = { deep:{ object:{ here: 1 } } };
+      watch();
+      expect(results[0]).toEqual({ path:['another'], value:{ deep:{ object:{ here:1 } } } });
+    });
+
+    it('should report changes in array', function() {
+      setup({ arr: [1,2,3] });
+      watch();
+      expect(results[0]).toEqual({ path:[], value:{ arr:[1,2,3] } });
+      context.data.arr.splice(0,1);
+      watch();
+      expect(results.length).toBe(3);
+      expect(results).toContain({ path:['arr',0], value:2 });
+      expect(results).toContain({ path:['arr',1], value:3 });
+      expect(results).toContain({ path:['arr',2], value:null });
+      context.data.arr.push({
+        superman:{ real:false }
+      });
+      watch();
+      expect(results[0]).toEqual({ path:['arr',2], value:{
+        superman:{ real:false }
+      } });
+      context.data.arr[2].superman.fake = true;
+      watch();
+      expect(results[0]).toEqual({ path:['arr',2,'superman','fake'], value:true });
+    });
   });
 
   describe('data', function() {
@@ -224,8 +292,8 @@ describe('Burn', function() {
       fireEmit('value', 'url', '', remoteValue);
       $timeout.flush();
 
-      expect(bases['url/banana'].set).toHaveBeenCalledWith('not yellow');
-      expect(bases['url/elephant'].set).toHaveBeenCalledWith(true);
+      expect(context.data).toEqual({ banana: 'not yellow', mango: 'blue', elephant: true });
+      expect(bases.url.update).toHaveBeenCalledWith(context.data);
     });
     
     it('should send an update when a child changes', function() {
