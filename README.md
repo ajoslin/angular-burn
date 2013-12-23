@@ -1,15 +1,69 @@
 angular-burn
 ------------
 
-Why this instead of angularFire? 
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
 
-I used angularFire in an app and had some problems with it:
+Why this instead of angularFire? It has a few improvements:
 
-1. Every time you change anything on the object, it sent the whole object back up.  The biggest issue with this was my firebase's security rules. Consider if I have /users/{id} as an angularFire object. I update myUser.photo, and angularFire tries to save - but it tries to save the whole object, and I have a security rule that doesn't allow writing on an existing /users/{id}.  A fix would be to only send pertinent changes up. 
-1. Huge bandwidth usage, due to 1
-1. angularFire is not unit-tested or anywhere near testable, which just makes me scared to use it in production
+- angular-burn has the ability to 'filter' which values you get back from Firebase. For example, if you have a user and you only want to download his friends.  See [filtering data from server](#filtering-data-from-server) for more information.
+- angular-burn will figure out exactly which client side changes happen in a deep or nested object/array, and only send those changes up with ref.set().
+- angular-burn will find out exactly which changes happen remotely by adding child listeners, and only change the needed attributes in the client-side object.
+- angular-burn allows the type of the object at the root to change: you could have an object which goes from array to being removed to an object to a number to a string, and it will work as intended
+- angular-burn has unit tests and is built for testing and modularity
 
-- angular-burn has the ability to 'filter' which values you get back from Firebase. For example, if you have a user and you only want to download his friends, your data might look like the following:
+Quick Start
+-----------
+
+```sh
+bower install angular-burn
+```
+```html
+<script src="angular.js"></script>
+<script src="angular-burn.js"></script>
+```
+```js
+var myApp = angular.module('myApp', ['burnbase']);
+myApp.controller('MyCtrl', function($scope, Burn) {
+  var myBurn = Burn({
+    scope: $scope,
+    name: 'users',
+    ref: new Firebase('http://my.firebaseio.com/users')
+  });
+  myBurn.ready().then(function() {
+    $scope.users.bob.name = 'Bob Johnson'; //synced with Firebase
+  });
+});
+```
+Then manipulate any property anywhere on $scope.users, and it will sync changes to Firebase.
+
+Documentation
+-------------
+
+<a id="docs-main"></a>
+#### `var myBurn = Burn(options)`
+
+`options` is an object with the following fields:
+
+* `scope` `{object}` - The parent object for binding firebase data. Does *not* have to be an actual angular scope.
+* `name` `{string}` - The key to bind data to. Eg if name is 'users', data will be found in `scope.users`.
+* `ref` `{string|firebaseRef}` - The ref - or url to create a ref - that we will get data from.
+* `filterRef` `{string|firebaseRef}` (optional) - If defined, lets us only get *some* of the data back from `options.ref`. For example, if we have hundreds of users but we only want to pull down the logged in user's friends.  See [filtering data from server](#filtering-data-from-server) for more information on this.
+
+Returns a `Burn` instance, with the following properties:
+
+* `destroy` `{function}` - Call this to destroy the burn.  This is automatically called when `options.scope` is destroyed if `options.scope` is an angular scope object.
+* `isReady` `{boolean}` - Whether the burn is 'ready': this will resolve once Firebase gives us the initial value of the data.
+* `ready` `{function}` - Returns a promise that will be resolved once the burn is ready.
+
+Manipulate any value anywhere in `options.scope[name]`, and it will push that exact change up to Firebase.  Additionally, any change from Firebsae will change only the relevant sub-data on the client.
+
+Filtering Data From Server
+--------------------------
+
+- You can use `options.filterRef` to only download a subset of a huge data-set.  For example, say your user is logged in as Bob.  You want to download and Burn only him and his friends out of hundreds of users.
+
+Let's say your Firebase data living on the server looked like this:
 ```js
 "friends": {
   "bob": {
@@ -18,7 +72,7 @@ I used angularFire in an app and had some problems with it:
     "bob": true
   }
 },
-"user:": {
+"users": {
   "bob": {...},
   "joe": {...},
   "jane": {...},
@@ -26,7 +80,8 @@ I used angularFire in an app and had some problems with it:
   "sally": {...}
 }
 ```
-Now as you see, bob has joe and jane as friends, and himself as a friend.  We only want to download the users data for Bob, Joe, and Jane, if we are logged in as Bob.  This is now as simple as:
+
+So, you want to download only the users where `/friends/bob/{userId}` is true.  You can do this very simply:
 ```js
 var usersBurn = new Burn({
   scope: $scope,
@@ -35,13 +90,8 @@ var usersBurn = new Burn({
   filterRef: new Firebase('my.firebaseio.com/friends/bob')
 });
 ```
-Now, $scope.users will always represent only the user objects of any userIds found in friends/bob:  $scope.users will add and remove keys based on changes in friends/bob.
 
-- angular-burn will figure out exactly which client side changes happen in a deep or nested object/array, and only send those changes up with ref.set().
-- angular-burn will find out exactly which changes happen remotely by adding child listeners, and only change the needed attributes in the client-side object.
-- angular-burn allows the type of the object at the root to change: you could have an object which goes from array to being removed to an object to a number to a string, and it will work as intended
-- angular-burn has unit tests and is built for testing and modularity
-
+Now `$scope.users` will represent only the keys in `/users` that match keys in `/friends/bob`.  Any changes to `/friends/bob` will add and remove users from `$scope.users`.
 
 Development
 -----------
