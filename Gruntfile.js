@@ -1,5 +1,5 @@
 module.exports = function(grunt) {
-  grunt.loadNpmTasks('grunt-contrib-concat');
+  require('load-grunt-tasks')(grunt);
 
   grunt.initConfig({
     pkg: grunt.file.readJSON('bower.json'),
@@ -15,13 +15,22 @@ module.exports = function(grunt) {
     },
     shell: {
       release: {
+        options: {
+          stdout: true,
+          stderr: true
+        },
         command: [
-          'grunt',
+          'grunt concat',
           'mv dist/angular-burn.js .',
           'git tag v<%= pkg.version %>',
           'grunt changelog',
-          'git commit -am release: v<%= pkg.version %>'
-        ]
+          'git commit -am "release: v<%= pkg.version %>"'
+        ].join(' && ')
+      }
+    },
+    changelog: {
+      options: {
+        dest: 'CHANGELOG.md'
       }
     },
     concat: {
@@ -31,7 +40,7 @@ module.exports = function(grunt) {
       },
       dist: {
         files: {
-          'angular-burn.js': ['src/*.js', '!src/*.spec.js']
+          'dist/angular-burn.js': ['src/*.js', '!src/*.spec.js']
         }
       }
     }
