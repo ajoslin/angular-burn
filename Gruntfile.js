@@ -24,7 +24,7 @@ module.exports = function(grunt) {
           'mv dist/angular-burn.js .',
           'git tag v<%= pkg.version %>',
           'grunt changelog',
-          'git commit -am "release: v<%= pkg.version %>"'
+          'git commit CHANGELOG.md bower.json angular-burn.js -am "release: v<%= pkg.version %>"'
         ].join(' && ')
       }
     },
