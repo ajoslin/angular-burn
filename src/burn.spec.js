@@ -1,3 +1,7 @@
+function mostRecentArg(spy) {
+  expect(spy.callCount).toBeGreaterThan(0);
+  return spy.mostRecentCall.args[0];
+}
 describe('Burn', function() {
   //Let's create a minimal simple Firebase mock
   //We'll mock firebase events just using an isolate scope to curry events
@@ -66,34 +70,28 @@ describe('Burn', function() {
   describe('misc', function() {
     it('should throw error if no context given', function() {
       expect(function() {
-        Burn(null, '', '');
+        Burn({});
       }).toThrow();
     });
     it('should throw error if no name is given', inject(function($rootScope) {
       expect(function() {
-        Burn($rootScope.$new(), null, '');
+        Burn({scope: {}, name: ''});
       }).toThrow();
     }));
     it('should throw error if no object or string ref given', function() {
       expect(function() {
-        Burn({}, '', null);
+        Burn({scope: {}, name: 'super', ref: null});
       }).toThrow();
-      expect(function() {
-        Burn({}, '', 1);
-      }).toThrow();
-    });
-    it('should allow object and string', function() {
-      Burn({}, 'name', 'url');
     });
     it('should return an object with properties', function() {
-      var burny = Burn({}, 'name', 'url');
+      var burny = Burn({scope:{}, name:'name', ref:'url'});
       expect(burny.destroy).toBeDefined();
       expect(burny.ready).toBeDefined();
       expect(burny.ready().then).toBeDefined();
     });
     it('should call $on("$destroy", destroy) if given context has $on', function() {
       var $on = jasmine.createSpy('$on');
-      var burny = Burn({$on: $on}, 'name', 'url');
+      var burny = Burn({scope:{$on: $on}, name:'name', ref:'url'});
       expect($on).toHaveBeenCalledWith('$destroy', burny.destroy);
     });
   });
@@ -131,12 +129,20 @@ describe('Burn', function() {
     it('arrays should return themselves', function() {
       var array = [1,2];
       var copied = burnCopy(array);
-      expect(copied).toBe(array);
+      expect(copied).toEqual(array);
     });
     it('objects should be an anulgaar.copy with no $-attrs', function() {
       var obj = {banana: true, $elephant: 4};
       var copied = burnCopy(obj);
       expect(copied).toEqual({banana: true});
+    });
+    it('object should be deep without $', function() {
+      expect(burnCopy({
+        $attr: { value: 3 },
+        deep: { $nope: 1, yes: 2 }
+      })).toEqual({
+        deep: { yes: 2 }
+      });
     });
   });
 
@@ -166,14 +172,14 @@ describe('Burn', function() {
     });
   });
 
-  describe('makeObjectReporterFn', function() {
+  describe('makeObjectReporter', function() {
     var watch;
     var context;
     var results;
     function setup(initialValue) {
       context = { data: initialValue };
       results = [];
-      var watchFn = makeObjectReporterFn(context, 'data', function(path, value) {
+      var reporter = makeObjectReporter(context, 'data', function(path, value) {
         results.unshift({
           path: path,
           value: value
@@ -181,14 +187,17 @@ describe('Burn', function() {
       });
       watch = function() {
         results.length = 0; //new results for each test
-        watchFn();
+        reporter.compare();
       };
     }
 
     it('should report all types of change at root', function() {
       setup(1);
       watch();
-      expect(results[0]).toEqual({ path:[], value:1 });
+      expect(results.length).toBe(0);
+      context.data = 2;
+      watch();
+      expect(results[0]).toEqual({ path:[], value:2 });
       context.data = 'string';
       watch();
       expect(results[0]).toEqual({ path:[], value:'string' });
@@ -206,16 +215,23 @@ describe('Burn', function() {
       context.data.deep.object.extra = 6;
       watch();
       expect(results[0]).toEqual({ path:['deep','object','extra'], value:6 });
+      context.data.deep.object.is.deep = 'nope';
+      watch();
+      expect(results[0]).toEqual({ path:['deep','object','is','deep'], value:'nope' });
       context.data.deep.object.is = null;
       watch();
       expect(results[0]).toEqual({ path:['deep','object','is'], value:null });
       context.data.another = { deep:{ object:{ here: 1 } } };
       watch();
       expect(results[0]).toEqual({ path:['another'], value:{ deep:{ object:{ here:1 } } } });
+      context.data.another = { deep: false };
+      watch();
+      expect(results[0]).toEqual({ path:['another','deep'], value:false });
     });
 
     it('should report changes in array', function() {
-      setup({ arr: [1,2,3] });
+      setup();
+      context.data = { arr: [1,2,3] };
       watch();
       expect(results[0]).toEqual({ path:[], value:{ arr:[1,2,3] } });
       context.data.arr.splice(0,1);
@@ -237,9 +253,12 @@ describe('Burn', function() {
     });
   });
 
-  describe('data', function() {
+  describe('instance', function() {
     var ref, $rootScope, burny, context, initialValue;
-    function setup(localVal) {
+    afterEach(function() {
+      burny && burny.destroy();
+    });
+    function setup(localVal, options) {
       inject(function(Firebase, _$rootScope_, Burn) {
         context = {data: localVal};
         initialValue = localVal || {};
@@ -248,7 +267,11 @@ describe('Burn', function() {
         spyOn(window, 'burnMerge').andCallThrough();
         spyOn(window, 'burnCopy').andCallThrough();
 
-        burny = Burn(context, 'data', ref);
+        burny = Burn(extend({
+          scope: context, 
+          name: 'data',
+          ref: ref
+        }, options || {}));
         $rootScope = _$rootScope_;
         spyOn($rootScope, '$watch').andCallThrough();
       });
@@ -293,7 +316,7 @@ describe('Burn', function() {
       $timeout.flush();
 
       expect(context.data).toEqual({ banana: 'not yellow', mango: 'blue', elephant: true });
-      expect(bases.url.update).toHaveBeenCalledWith(context.data);
+      expect(mostRecentArg(bases.url.update)).toEqual(context.data);
     });
     
     it('should send an update when a child changes', function() {
@@ -301,17 +324,7 @@ describe('Burn', function() {
       
       context.data.b = 2;
       $rootScope.$apply();
-      expect(bases['url/b'].set).toHaveBeenCalledWith(2);
-    });
-
-    it('should start watching for firebase events on init', function() {
-      setup();
-      expect(ref.on).not.toHaveBeenCalled();
-
-      fireEmit('value', 'url');
-      $timeout.flush();
-
-      expect(ref.on).toHaveBeenCalled();
+      expect(mostRecentArg(bases['url/b'].set)).toBe(2);
     });
 
     describe('root-level events with value', function() {
@@ -434,10 +447,64 @@ describe('Burn', function() {
         });
         fireEmit('child_removed', 'url/a/b', 'c', data.a.b.c);
         expect(data).toEqual({ a:{ val:1, b:{ val:2 } } });
-        expect(bases['url/a'].off).not.toHaveBeenCalled();
-        expect(bases['url/a/b'].off).toHaveBeenCalled();
+        expect(bases['url/a/b/c'].off).toHaveBeenCalled();
+        expect(bases['url/a/b/c/val'].off).toHaveBeenCalled();
         expect(bases['url/a/b/c'].off).toHaveBeenCalled();
         expect(bases['url/a/b/c/d'].off).toHaveBeenCalled();
+        expect(bases['url/a/b/c/d/val'].off).toHaveBeenCalled();
+      });
+    });
+
+    describe('with filterRef', function() {
+      var filterRef;
+      function init() {
+        inject(function(Firebase) {
+          filterRef = new Firebase('filter');
+          setup(undefined, {filterRef: filterRef});
+        });
+      }
+
+      it('should initialize to object', function() {
+        expect(context.data).toBeFalsy();
+        init();
+        expect(context.data).toEqual({});
+      });
+      it('should be ready if filter has nothing in it', function() {
+        init();
+        expect(burny.isReady).toBeFalsy();
+        fireEmit('value', 'filter');
+        $timeout.flush();
+        expect(burny.isReady).toBe(true);
+      });
+      it('should not set ready if filterRef gives us a value', function() {
+        init();
+        fireEmit('value', 'filter', '', { superkey:true });
+        expect(burny.isReady).toBeFalsy();
+      });
+      it('should whitelist a key and listen to it on main ref when filterRef has value', function() {
+        init();
+        fireEmit('value', 'filter', '', { superkey:true });
+        expect(burny.$allowedKeys).toEqual({ superkey:true });
+
+        //Once key is whitelisted, it should listen for everything on ref.child('superkey')
+        expect(mostRecentArg(bases['url/superkey'].on)).toBe('value');
+
+        //Once value arrives, it will evalAsync setting that value to context.data
+        fireEmit('value', 'url/superkey', '', { superman:'was here' });
+        $timeout.flush();
+        expect(context.data).toEqual({ superkey:{ superman:'was here' } });
+
+        //Normal events should work
+        fireEmit('child_added', 'url/superkey', 'a', 'aValue');
+        $timeout.flush();
+        expect(context.data.superkey.a).toEqual('aValue');
+
+        //It should remove the key if it's removed from filterRef
+        expect(bases['url/superkey'].off).not.toHaveBeenCalled();
+        fireEmit('child_removed', 'filter', 'superkey');
+        expect(burny.$allowedKeys).toEqual({});
+        expect(context.data.superkey).toBeUndefined();
+        expect(bases['url/superkey'].off).toHaveBeenCalled();
       });
     });
   });

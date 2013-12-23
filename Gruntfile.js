@@ -2,7 +2,7 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-concat');
 
   grunt.initConfig({
-    pkg: grunt.file.readJSON('package.json'),
+    pkg: grunt.file.readJSON('bower.json'),
     meta: {
       banner: 
         '/*\n' +
@@ -11,7 +11,18 @@ module.exports = function(grunt) {
         ' * http://github.com/ajoslin/angular-burn\n' +
         ' */\n' +
         '(function() {\n',
-      footer: '}());'
+      footer: '\n}());'
+    },
+    shell: {
+      release: {
+        command: [
+          'grunt',
+          'mv dist/angular-burn.js .',
+          'git tag v<%= pkg.version %>',
+          'grunt changelog',
+          'git commit -am release: v<%= pkg.version %>'
+        ]
+      }
     },
     concat: {
       options: {
