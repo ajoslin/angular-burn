@@ -1,5 +1,5 @@
 /*
- * angular-burn, v0.0.1
+ * angular-burn, v0.0.2
  * Andy Joslin, MIT License
  * http://github.com/ajoslin/angular-burn
  */
