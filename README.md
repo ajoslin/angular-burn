@@ -4,13 +4,11 @@ angular-burn
 - [Quick Start](#quick-start)
 - [Documentation](#documentation)
 
-Why this instead of angularFire? It has a few improvements:
+(I would still recommend angularFire for most apps unless you are ready to maybe find some bugs!)
 
 - angular-burn has the ability to 'filter' which values you get back from Firebase. For example, if you have a user and you only want to download his friends.  See [filtering data from server](#filtering-data-from-server) for more information.
 - angular-burn will figure out exactly which client side changes happen in a deep or nested object/array, and only send those changes up with ref.set().
 - angular-burn will find out exactly which changes happen remotely by adding child listeners, and only change the needed attributes in the client-side object.
-- angular-burn allows the type of the object at the root to change: you could have an object which goes from array to being removed to an object to a number to a string, and it will work as intended
-- angular-burn has unit tests and is built for testing and modularity
 
 Quick Start
 -----------
